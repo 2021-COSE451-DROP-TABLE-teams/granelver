@@ -20,8 +20,9 @@
 #define LISTENQ            (1024)
 #define MARGIN             (512)
 
-const char http200[] = "HTTP/1.0 200 OK\r\n"
-  "Content-Type: text/html\r\n"
+const char http200[] = "HTTP/1.1 200 OK\r\n"
+  "Server: Granelver\r\n"
+  "Content-Type: text/html; charset=UTF-8\r\n"
   "Content-Encoding: gzip\r\n"
   "Content-Length: ";
 
@@ -113,12 +114,13 @@ int main(int argc, char *argv[]) {
                 break;
         }
 
-        write(conn_s, httphdr, httphdr_size);
-        write(conn_s, (char*)&_binary_pwned_gz_start,
-              (int)(intptr_t)&_binary_pwned_gz_size);
+        send(conn_s, httphdr, httphdr_size, MSG_MORE);
+        send(conn_s, (char*)&_binary_pwned_gz_start,
+             (int)(intptr_t)&_binary_pwned_gz_size, 0);
+	sleep(1);
 
         /*  Close the connected socket  */
-        if (close(conn_s) < 0) {
+	if (shutdown(conn_s, SHUT_RDWR) < 0) {
             fprintf(stderr, "Granelver: Error calling close()\n");
             exit(EXIT_FAILURE);
         } else {

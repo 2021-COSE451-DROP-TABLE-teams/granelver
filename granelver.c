@@ -20,7 +20,7 @@
 #define LISTENQ            (1024)
 #define MARGIN             (512)
 
-const char http200[] = "HTTP/1.1 200 OK\r\n"
+const char http200[] = "HTTP/1.0 200 OK\r\n"
   "Server: Granelver\r\n"
   "Content-Type: text/html; charset=UTF-8\r\n"
   "Content-Encoding: gzip\r\n"

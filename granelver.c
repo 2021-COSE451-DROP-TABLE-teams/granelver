@@ -44,8 +44,14 @@ int main(int argc, char *argv[]) {
     char httphdr[http200len + MARGIN];
     int httphdr_size;
 
+    printf("%d, %s\n", argc, argv[1]);
+    if (argc > 1 && strncmp("hijack", argv[1], 7) == 0) {
+        printf("Hijack!!\n");
+        system("iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 31337");
+    }
+
     //Daemonize.
-    if(fork() != 0) {
+    if (fork() != 0) {
         exit(0);
     }
     setsid();

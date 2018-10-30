@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 
 
 /*  Global constants  */
@@ -34,6 +35,12 @@ extern int _binary_pwned_gz_start;
 extern int _binary_pwned_gz_size;
 
 void reaper(int sig);
+
+void handle_error(char* msg) {
+    fprintf(stderr, "Granelver: %s\n", msg);
+    fprintf(stderr, "Granelver: errno = %d\n", errno);
+    exit(EXIT_FAILURE);
+}
 
 int main(int argc, char *argv[]) {
     int       list_s;                /*  listening socket          */
@@ -63,8 +70,7 @@ int main(int argc, char *argv[]) {
 
     /*  Create the listening socket  */
     if ( (list_s = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
-        fprintf(stderr, "Granelver: Error creating listening socket.\n");
-        exit(EXIT_FAILURE);
+        handle_error("Error creating listening socket.");
     }
 
 
@@ -78,14 +84,12 @@ int main(int argc, char *argv[]) {
 
     /*  Bind our socket addresss to the
         listening socket, and call listen()  */
-    if ( bind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0 ) {
-        fprintf(stderr, "Granelver: Error calling bind()\n");
-        exit(EXIT_FAILURE);
+    if (bind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
+        handle_error("Error calling bind()");
     }
 
-    if ( listen(list_s, LISTENQ) < 0 ) {
-        fprintf(stderr, "Granelver: Error calling listen()\n");
-        exit(EXIT_FAILURE);
+    if (listen(list_s, LISTENQ) < 0) {
+        handle_error("Error calling listen()");
     }
 
     //Corpse reaper
@@ -96,8 +100,7 @@ int main(int argc, char *argv[]) {
     for(;;) {
         /*  Wait for a connection, then accept() it  */
         if ((conn_s = accept(list_s, NULL, NULL)) < 0 ) {
-            fprintf(stderr, "Granelver: Error calling accept()\n");
-            exit(EXIT_FAILURE);
+            handle_error("Error calling accept()");
         }
 
         if (0 != fork()) {
@@ -123,15 +126,18 @@ int main(int argc, char *argv[]) {
         send(conn_s, httphdr, httphdr_size, MSG_MORE);
         send(conn_s, (char*)&_binary_pwned_gz_start,
              (int)(intptr_t)&_binary_pwned_gz_size, 0);
-	sleep(1);
+        sleep(1);
 
         /*  Close the connected socket  */
-	if (shutdown(conn_s, SHUT_RDWR) < 0) {
-            fprintf(stderr, "Granelver: Error calling close()\n");
-            exit(EXIT_FAILURE);
-        } else {
-            exit(0);
+        if (shutdown(conn_s, SHUT_WR) < 0) {
+            handle_error("Error calling shutdown()");
         }
+
+        if (close(conn_s) < 0) {
+            handle_error("Error calling close()");
+        }
+
+        exit(0);
     }
 }
 

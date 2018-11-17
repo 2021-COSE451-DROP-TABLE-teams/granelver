@@ -19,16 +19,14 @@
 #define HTTP_PORT          (31337)
 #define MAX_LINE           (1000)
 #define LISTENQ            (1024)
+#define HTTP_RECVHDR_LEN   (1024)
 #define MARGIN             (512)
 
-const char http200[] = "HTTP/1.0 200 OK\r\n"
-  "Server: Granelver\r\n"
-  "Content-Type: text/html; charset=UTF-8\r\n"
-  "Content-Encoding: gzip\r\n"
-  "Content-Length: ";
+const char httphdr[] = "Server: Granelver\r\n"
+    "Content-Type: text/html; charset=UTF-8\r\n";
 
-const char endline[] = {0x0D, 0x0A, 0x0D, 0x0A};
-const int endline_len = 4;
+const char http400msg[] = "It is your fault.";
+const char http404msg[] = "Here is Invisible Pink Unicorn.";
 
 //Embedded HTML in ELF
 extern int _binary_pwned_gz_start;
@@ -42,14 +40,25 @@ void handle_error(char* msg) {
     exit(EXIT_FAILURE);
 }
 
+void send_http_header(int fd, int code, char *message, char *encoding, int bodylen) {
+    char buf[1024];
+
+    snprintf(buf, 1024, "HTTP/1.0 %d %s\r\n", code, message);
+    write(fd, buf, strlen(buf));
+    snprintf(buf, 1024, "Content-Length: %d\r\n", bodylen);
+    write(fd, buf, strlen(buf));
+    snprintf(buf, 1024, "Content-Encoding: %s\r\n", encoding);
+    write(fd, buf, strlen(buf));
+    write(fd, httphdr, strlen(httphdr));
+    write(fd, "\r\n", 2);
+}
+
 int main(int argc, char *argv[]) {
     int       list_s;                /*  listening socket          */
     int       conn_s;                /*  connection socket         */
     struct    sockaddr_in servaddr;  /*  socket address structure  */
 
-    char http200len = strlen(http200);
-    char httphdr[http200len + MARGIN];
-    int httphdr_size;
+    char httprecvhdr[HTTP_RECVHDR_LEN];
 
     printf("%d, %s\n", argc, argv[1]);
     if (argc > 1 && strncmp("hijack", argv[1], 7) == 0) {
@@ -63,10 +72,6 @@ int main(int argc, char *argv[]) {
     }
     setsid();
     signal(SIGHUP, SIG_IGN);
-
-    snprintf(httphdr, http200len + MARGIN, "%s%d\r\n\r\n",
-             http200, (int)(intptr_t)&_binary_pwned_gz_size);
-    httphdr_size = strlen(httphdr);
 
     /*  Create the listening socket  */
     if ( (list_s = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
@@ -115,28 +120,66 @@ int main(int argc, char *argv[]) {
 
         char c;
         int cnt = 0;
+        int recvsz = 0;
+        char *httprecvhdr_off = httprecvhdr;
 
-        //Ignore HTTP verbs.
-        //Just serve single page.
         for(;;) {
             read(conn_s, &c, 1);
 
-            if(c == endline[cnt]) {
+            if (recvsz > HTTP_RECVHDR_LEN + 2) {
+                // It's your fault but I'll not throw 400 because I'm
+                // too lazy to implement 400
+                send_http_header(conn_s, 400, "Bad Request", "identity", strlen(http400msg));
+                write(conn_s, http400msg, strlen(http400msg));
+                close(conn_s);
+                exit(0);
+            }
+
+            if(c == 0x0D || c == 0x0A) {
+                cnt++;
+            } else {
+                *httprecvhdr_off = c;
+                httprecvhdr_off++;
+            }
+
+            if (cnt >= 2) {
+                fprintf(stderr, "[+] Detect end of HTTP verb and URI\n");
+                *httprecvhdr_off = 0x00;
+                break;
+            }
+        }
+
+        char method[HTTP_RECVHDR_LEN];
+        char uri[HTTP_RECVHDR_LEN];
+        char version[HTTP_RECVHDR_LEN];
+        sscanf(httprecvhdr, "%s %s %s\n", method, uri, version);
+        fprintf(stderr, "[+] HTTP VERB: %s, HTTP URI: %s\n", method, uri);
+
+        cnt = 0;
+        for(;;) {
+            read(conn_s, &c, 1);
+
+            if(c == 0x0D || c == 0x0A) {
                 cnt++;
             } else {
                 cnt = 0;
             }
 
-            if(cnt == endline_len) {
+            if(cnt >= 4) {
                 break;
             }
         }
 
         fprintf(stderr, "[+] Detect end of HTTP request. Sending data...\n");
 
-        send(conn_s, httphdr, httphdr_size, 0);
-        send(conn_s, (char*)&_binary_pwned_gz_start,
-             (int)(intptr_t)&_binary_pwned_gz_size, 0);
+        if (strcmp(uri, "/favicon.ico") == 0) {
+            send_http_header(conn_s, 404, "Not found", "identify", strlen(http404msg));
+            send(conn_s, http404msg, strlen(http404msg), 0);
+        } else {
+            send_http_header(conn_s, 200, "OK", "gzip", (int)(intptr_t)&_binary_pwned_gz_size);
+            send(conn_s, (char*)&_binary_pwned_gz_start,
+                 (int)(intptr_t)&_binary_pwned_gz_size, 0);
+        }
 
         fprintf(stderr, "[+] Data sent!\n");
 

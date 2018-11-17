@@ -37,8 +37,8 @@ extern int _binary_pwned_gz_size;
 void reaper(int sig);
 
 void handle_error(char* msg) {
-    fprintf(stderr, "Granelver: %s\n", msg);
-    fprintf(stderr, "Granelver: errno = %d\n", errno);
+    fprintf(stderr, "[-] %s\n", msg);
+    fprintf(stderr, "[-] errno = %d\n", errno);
     exit(EXIT_FAILURE);
 }
 
@@ -92,6 +92,8 @@ int main(int argc, char *argv[]) {
         handle_error("Error calling listen()");
     }
 
+    fprintf(stderr, "[+] Successfully initialized web server\n");
+
     //Corpse reaper
     signal(SIGCHLD, reaper);
 
@@ -105,7 +107,10 @@ int main(int argc, char *argv[]) {
 
         if (0 != fork()) {
             close(conn_s);
+            fprintf(stderr, "[+] Parent closed socket\n");
             continue;
+        } else {
+            fprintf(stderr, "[+] Child spawned successfully\n");
         }
 
         char c;
@@ -116,25 +121,36 @@ int main(int argc, char *argv[]) {
         for(;;) {
             read(conn_s, &c, 1);
 
-            if(c == endline[cnt])
+            if(c == endline[cnt]) {
                 cnt++;
+            } else {
+                cnt = 0;
+            }
 
-            if(cnt == endline_len)
+            if(cnt == endline_len) {
                 break;
+            }
         }
 
-        send(conn_s, httphdr, httphdr_size, MSG_MORE);
+        fprintf(stderr, "[+] Detect end of HTTP request. Sending data...\n");
+
+        send(conn_s, httphdr, httphdr_size, 0);
         send(conn_s, (char*)&_binary_pwned_gz_start,
              (int)(intptr_t)&_binary_pwned_gz_size, 0);
-        sleep(1);
+
+        fprintf(stderr, "[+] Data sent!\n");
 
         /*  Close the connected socket  */
         if (shutdown(conn_s, SHUT_WR) < 0) {
             handle_error("Error calling shutdown()");
+        } else {
+            fprintf(stderr, "[+] socket shutted down\n");
         }
 
         if (close(conn_s) < 0) {
             handle_error("Error calling close()");
+        } else {
+            fprintf(stderr, "[+] Socket closed\n");
         }
 
         exit(0);
